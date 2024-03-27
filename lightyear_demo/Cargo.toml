@@ -9,7 +9,7 @@ mock_time = ["lightyear/mock_time"]
 
 [dependencies]
 leafwing-input-manager = "0.13"
-lightyear = { version = "0.12.0", features = [
+lightyear = { git = "https://github.com/cBournhonesque/lightyear.git", branch = "cb/interest-management-bug", features = [
   "webtransport",
   "websocket",
   "render",
