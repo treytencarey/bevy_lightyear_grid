@@ -73,7 +73,7 @@ pub(crate) struct Global {
     pub client_id_to_room_id: HashMap<ClientId, RoomId>,
 }
 
-pub(crate) fn init(mut commands: Commands) {
+pub(crate) fn init(mut commands: Commands, mut room_manager: ResMut<RoomManager>) {
     commands.spawn(Camera2dBundle::default());
     commands.spawn(TextBundle::from_section(
         "Server",
@@ -87,24 +87,25 @@ pub(crate) fn init(mut commands: Commands) {
     // spawn dots in a grid
     for x in -NUM_CIRCLES..NUM_CIRCLES {
         for y in -NUM_CIRCLES..NUM_CIRCLES {
-            commands.spawn((
-                PlayerId(900 + (NUM_CIRCLES * (x + NUM_CIRCLES) + (y + NUM_CIRCLES)) as u64),
-                Position(Vec2::new(x as f32 * GRID_SIZE + GRID_SIZE / 2.0, y as f32 * GRID_SIZE + GRID_SIZE / 2.0)),
-                LastPosition(None),
+            let position = Vec2::new(x as f32 * GRID_SIZE + GRID_SIZE / 2.0, y as f32 * GRID_SIZE + GRID_SIZE / 2.0);
+            let room_id = get_room_id_from_grid_position(get_grid_position(position));
+            let mut room = room_manager.room_mut(RoomId(room_id as u16));
+            let grid_entity = commands.spawn((
+                Position(position),
                 CircleMarker,
                 Replicate {
                     // use rooms for replication
                     replication_mode: ReplicationMode::Room,
                     ..default()
                 },
-            ));
+            )).id();
+            room.add_entity(grid_entity)
         }
     }
 }
 
 /// Server connection system, create a player upon connection
 pub(crate) fn handle_connections(
-    mut room_manager: ResMut<RoomManager>,
     mut connections: EventReader<ConnectEvent>,
     mut disconnections: EventReader<DisconnectEvent>,
     mut global: ResMut<Global>,
@@ -193,7 +194,7 @@ pub(crate) fn interest_management(
                             if dx == 0 && dy == 0 { // Only add the entity to the room if it's in the center grid
                                 room.add_entity(entity);
                             }
-                            trace!("Player spawned, added to grid_pos {:?} (id: {:?})", view_grid_pos, room_id);
+                            info!("Player spawned, added to grid_pos {:?} (id: {:?})", view_grid_pos, room_id);
                         }
                     }
                 },
@@ -217,14 +218,14 @@ pub(crate) fn interest_management(
                             let room_id = get_room_id_from_grid_position(last_grid_position);
                             let mut room = room_manager.room_mut(RoomId(room_id as u16));
                             room.remove_entity(entity);
-                            info!("Entity removed from grid_pos {:?} (id: {:?})", last_grid_position, room_id);
+                            info!("Player entity removed from grid_pos {:?} (id: {:?})", last_grid_position, room_id);
                         }
                         // Add the entity to the room it is in now
                         {
                             let room_id = get_room_id_from_grid_position(grid_position);
                             let mut room = room_manager.room_mut(RoomId(room_id as u16));
                             room.add_entity(entity);
-                            info!("Entity added to grid_pos {:?} (id: {:?})", grid_position, room_id);
+                            info!("Player entity added to grid_pos {:?} (id: {:?})", grid_position, room_id);
                         }
                         // Remove the client from rooms that are no longer in view
                         for last_grid_pos in last_grid_positions.iter().filter(|&pos| !grid_positions.contains(pos)) {
@@ -232,7 +233,7 @@ pub(crate) fn interest_management(
                             unsafe { if client_id.0 < 900 { DEBUG_ROOM_POSITIONS.retain(|&pos| pos != *last_grid_pos) } };
                             let mut room = room_manager.room_mut(RoomId(room_id as u16));
                             room.remove_client(client_id.0);
-                            trace!("Player removed from grid_pos {:?} (id: {:?})", last_grid_pos, room_id);
+                            info!("Client removed from grid_pos {:?} (id: {:?})", last_grid_pos, room_id);
                         }
                         // Add the client to rooms that are now in view
                         for grid_pos in grid_positions.iter().filter(|&pos| !last_grid_positions.contains(pos)) {
@@ -240,7 +241,7 @@ pub(crate) fn interest_management(
                             unsafe { if client_id.0 < 900 { DEBUG_ROOM_POSITIONS.push(*grid_pos) } };
                             let mut room = room_manager.room_mut(RoomId(room_id as u16));
                             room.add_client(client_id.0);
-                            trace!("Player added to grid_pos {:?} (id: {:?})", grid_pos, room_id);
+                            info!("Client added to grid_pos {:?} (id: {:?})", grid_pos, room_id);
                         }
                         unsafe { info!("Player crossed a boundary, new grids: {:?}", DEBUG_ROOM_POSITIONS); }
                     }
